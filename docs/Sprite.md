@@ -92,7 +92,7 @@ ___
 ### Get·Texel () {: aria-label='Functions' }
 [ ](#){: .abrep .tooltip .badge }
 #### [KColor](KColor.md) GetTexel ( [Vector](Vector.md) SamplePos, [Vector](Vector.md) RenderPos, float AlphaThreshold, int LayerID = 0 ) {: .copyable aria-label='Functions' }
-Returns the color of the pixel of the sprite at the given sample position. RenderPos can be neglected and set to a null vector
+Returns the color of the pixel of the sprite at the given sample position. RenderPos can be neglected and set to a null vector (as in a vector with 0,0 as coordinates). The origin of the SamplePos is the Pivot of the sprite.
 
 ___
 ### Is·Event·Triggered () {: aria-label='Functions' }
