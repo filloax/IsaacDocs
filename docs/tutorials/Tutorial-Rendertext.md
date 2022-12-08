@@ -2,126 +2,175 @@
 tags:
   - Tutorial
 ---
-# [Tutorial] Render text ingame
+# [Tutorial] Use custom callbacks
 
-## Fonts used by the game
+Repentance update 1.79b added various callback functions, including priority and the capability of creating your own callbacks.
 
-The Following fonts are used by the game and can be used with the [`Font()`](../Font.md) class:
+## Basic callbacks
 
-|**Font Name**|**Ingame Name/s**|**Ingame Example**|**Ingame Usage**|**Link to font**|
-|--- |--- |--- |--- |--- |
-|Droid Sans|droid|[Example Droid](../images/tutorial_special_chars/example_droid.png)|(Not used ingame)|[Droid Sans](../customData/droid-sans.zip)|
-|PF Tempesta Seven (Condensed)|pftempestasevencondensed|[Example PF Tempesta Seven](../images/tutorial_special_chars/example_pftempestasevencondensed.png)|HUD Elements like coin/key counters|[PF Tempesta Seven](https://www.dafont.com/pf-tempesta-seven.font)|
-|Team Meat Font|teammeatfont10<br/>teammeatfont12<br/>teammeatfont16<br/>teammeatfont16bold|[Example teammeatfont10](../images/tutorial_special_chars/example_teammeat10.png)<br/>[Example teammeatfont12](../images/tutorial_special_chars/example_teammeat12.png)<br/>[Example teammeatfont16](../images/tutorial_special_chars/example_teammeat16.png)<br/>[Example teammeatfont16bold](../images/tutorial_special_chars/example_teammeat16bold.png)|Main Menu Elements<br/>Pop-Ups<br/>Timer / Score Elements|[Team Meat Font without Bold](../customData/team-meat-font_1.2.zip)|
-|Terminus|terminus<br/>terminus8|[Example Terminus](../images/tutorial_special_chars/example_terminus.png)<br/>[Example Terminus8](../images/tutorial_special_chars/example_terminus8.png)|Debug Console / Isaac.RenderText()|[Terminus](http://terminus-font.sourceforge.net/)|
-|Upheaval|upheaval|[Example Upheaval](../images/tutorial_special_chars/example_upheaval.png)|Streak text|[Upheaval](https://www.dafont.com/upheaval.font)|
-|mplus (Japanese)|mplus_10r<br/>mplus_12b|[Example mplus_10r](../images/tutorial_special_chars/example_mplus10r.png)<br/>[Example mplus_12b](../images/tutorial_special_chars/example_mplus12b.png)|Replacement for all fonts aboth for Japanese translation.<br/>10r is pf "Tempesta seven" / "Team Meat" replacement<br/>12b is "Upheaval" replacement|[PixelMplus](http://itouhiro.hatenablog.com/entry/20130602/font)
-[(M+ Fonts)](https://mplus-fonts.osdn.jp/)|
-|kr Font (Korean)|kr_font12<br/>kr_font14|[Example kr_font12](../images/tutorial_special_chars/example_krfont12.png)<br/>[Example kr_font14](../images/tutorial_special_chars/example_krfont14.png)|TBD|No source found right now|
-|Team Meat Font (Korean)|kr_meatfont14|[Example kr_meatfont14](../images/tutorial_special_chars/example_krmeatfont14.png)|TBD|- Not available -|
+You can use `mod:AddCallback` (or `Isaac.AddCallback`, but it's recommended to use the mod table instead) with any value as the callback ID now, even strings:
 
+```Lua
+MOD:AddCallback("TEST", function(_, a, b, c)
+    print("test callback triggered", a, b, c)
+end)
+```
 
-## Basics of rendering a text
+In fact, it's recommended to use strings instead of numbers like the base game does if you're using custom callbacks, to avoid conflicts with other mods.
 
-First we need to have a look at the basic process of writing on the screen. here is a sample code:
+Just doing this won't do anything though, as nothing in the game or the mod triggers the "test" callback yet. What you can do to trigger it is:
 
-```lua
-local testmod= RegisterMod( "testmod" ,1 );
+```Lua
+Isaac.RunCallback("TEST", 1, 2, 3)
+```
 
-local function onRender(t)
-    Isaac.RenderText("Sample text", 50, 30, 1, 1, 1, 255)
+This will run all callbacks with the "test" id in order of priority and then in the order they were added.
+
+Notice that you didn't need to "define" the callback anywhere, any mod can add callbacks to your custom id using its value and you can run your custom callback without any previous definitions.
+
+## Returned values
+
+`Isaac.RunCallback` will stop at the first callback that returns a value and return it. For example:
+
+```Lua
+MOD:AddCallback("TEST_RETURN", function(_, a, b)
+    return a + b
+end)
+MOD:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function()
+    local ret = Isaac.RunCallback("TEST_RETURN", 1, 2)
+    print(ret)
+end)
+```
+
+This should print "3" in the log on run start.
+
+## Entity types / parameter matching
+
+Like with vanilla callback, you can make your callback only run for certain entity types, variants, or any other condition you need.
+
+```Lua
+-- Add custom callback
+MOD:AddCallback("TEST_ENTITY", function(_, entity, a, b, c)
+    print("test callback triggered", entity.Type, a, b, c)
+end)
+
+-- Add custom callback with attached ID
+MOD:AddCallback("TEST_ENTITY", function(_, entity, a, b, c)
+    print("tears only callback triggered", entity.Variant, a, b, c)
+end, EntityType.ENTITY_TEAR)
+
+-- Run custom callback with attached ID
+
+-- this will run all callbacks regardless of attached ID
+Isaac.RunCallback("TEST_ENTITY", 1, 2, 3)
+-- this won't run the tears only callback
+Isaac.RunCallbackWithParam("TEST_ENTITY", EntityType.ENTITY_PLAYER, entity, 1, 2, 3)
+-- this will run the tears only callback, and not callbacks with different IDs
+Isaac.RunCallbackWithParam("TEST_ENTITY", EntityType.ENTITY_TEAR, entity, 4, 5, 6)
+```
+
+Of course, this can be any value, not necessarily entity types. `Isaac.RunCallbackWithParam` checks if each callback's parameter matches its second argument, or is nil.
+
+## Mod compatibility
+
+As before, you don't need to "define" your callback, creating a custom callback just needs `Isaac.RunCallback` to run that at least once and `AddCallback` to be used with it.
+
+This allows for mods that offer an API to other mods to do that in a simple way: the dependent mods don't need to wait for the main mod to be loaded. 
+For example, imagine a Minimap mod that wants to allow its dependents to run code after the minimap changes size. Let's call it MinimapLibrary:
+The code in MinimapLibrary would be:
+
+```Lua
+-- ... callback where the minimap is enlarged
+Isaac.RunCallback("MINIMAPLIB_POST_MINIMAP_ENLARGE", nil, currentSize)
+```
+
+While the code in any dependent mod (Mod 2, here) would be:
+
+```Lua
+MOD2:AddCallback("MINIMAPLIB_POST_MINIMAP_ENLARGE", function(_, currentSize)
+    print("Minimap size has changed!", currentSize)
+    -- do something using currentSize
+end)
+```
+
+Mod 2 doesn't need to check if MinimapAPI is even loaded before adding inter-mod functionality: if it's loaded, it will run, otherwise it simply won't. 
+No need to wait for the library mod to be loaded, like you'd need to do when calling functions defined by it.
+
+## Run behavior
+
+Normally, `Isaac.RunCallback` breaks on the first return and returns it. If you need some other way of handling the callback running and returning behavior, you need to do it manually via `Isaac.GetCallbacks`.
+
+For example, if you want to continue running the callback, and override its first param with the last runs' return:
+
+```Lua
+MOD:AddCallback("TEST_GETCALLBACKS", function(_, arg) 
+    return arg + 2
+end)
+MOD:AddCallback("TEST_GETCALLBACKS", function(_, arg) 
+    return arg * 2
+end)
+
+local thisArg = 10
+local callbacks = Isaac.GetCallbacks("TEST_GETCALLBACKS")
+for _, callback in ipairs(callbacks) do
+    local ret = callback.Function(callback.Mod, thisArg)
+    if ret ~= nil then
+        thisArg = ret
+    end
 end
 
-testmod:AddCallback(ModCallbacks.MC_POST_RENDER, onRender)
+print(thisArg) -- prints 24
 ```
 
-**Result:**
-![](../images/tutorial_special_chars/b1.png)
+`Isaac.GetCallbacks` returns a table already ordered by callback priority and order of adding, so you don't need to worry about order unless you want to change it. Its elements are structured like this:
 
-The game uses the font-file "terminus.fnt" in order to render and display this text. this cant be changed. Luckily for us, this file contains "sprites" for all normal ASCII characters that exist out there (256 to be precise).
-
-## Rendering text with a different font
-
-We can render any kind of text with a different font as well. This can be done by using the "Font()" class and its functions.
-
-* * *
-
-### Example code:
-
-```lua
-local f = Font() -- init font object
-f:Load("font/droid.fnt") -- load a font into the font object
-f:DrawString("droid",60,50,KColor(1,1,1,1,0,0,0),0,true) -- render string with loaded font on position 60x50y
+```
+{
+    Mod = <mod table>,
+    Function = function(mod, callback args),
+    Priority = integer (default 0),
+    Param = entity id / other param (default -1),
+}
 ```
 
-### All possible Fonts that can be drawn:
+Passing true as the second argument to Isaac.GetCallbacks assigns an empty table to the callback if it didn't exist yet.
 
-![](../images/font-types.png)
+## Advanced parameters
 
-## Render Special Characters
+As you can get the callback table via GetCallbacks, you can also assign a metatable to it. In particular, Isaac can use a new function to have a different parameter checking than default (which uses ==).
 
-The game allows us to write anything into the "displayed text" argument that is part of the ASCII standard for characters. For characters a-z, 0-9 and ,.#+;:_'*~° this works without any problems and without using any kind of "hack". Now if we just strait up try to type in ' ä ' or ' ß ' to let it render as text, it will not look as intended.
-![](../images/tutorial_special_chars/b2.png)
-In order to fix this problem we have to use the "raw" version of said characters.
-Example:
+```Lua
+-- Initialize a custom callback with a custom parameter matching function
+-- Passing true as the second argument to Isaac.GetCallbacks assigns an empty table to this callback if it didn't exist yet
+-- In this example we expect a table as a parameter, but any type can be used
+-- If either parameter is nil, we always match
+setmetatable(Isaac.GetCallbacks("TEST_PARAMS_2", true), {
+    __matchParams = function(a, b)
+        return not a or not b or (type(a) == "table" and type(b) == "table" and a[1] == b[1] and a[2] == b[2])
+    end
+})
 
-`\197`
+-- This callback has no parameter, it will always be called
+MOD:AddCallback("TEST_PARAMS_2", function()
+    print("hi!")
+end)
 
-prints:
+-- These callbacks have a parameter attached to them, they will only be called if their parameter matches the one provided to Isaac.RunCallbackWithParam
+-- The __matchParams metamethod is used to determine whether the parameters match or not
+MOD:AddCallback("TEST_PARAMS_2", function()
+    print("hello world")
+end, {"hello", "world"})
 
-`Ä`
+MOD:AddCallback("TEST_PARAMS_2", function()
+    print("greetings earth")
+end, {"greetings", "earth"})
 
-So in order to print special characters, just replace them in the code like this:
+MOD:AddCallback("TEST_PARAMS_2", function()
+    print("howdy globe")
+end, {"howdy", "globe"})
 
-```lua
-Isaac.RenderText("S\228mple text", 50, 30, 1, 1, 1, 255)
+-- This should only print "hi!", then "hello world"
+Isaac.RunCallbackWithParam("TEST_PARAMS_2", {"hello", "world"})
 ```
 
-prints:
-
-`Sämple text`
-
-## List of all supported characters and their counterpart
-
-![](../images/tutorial_special_chars/b3.png)
-
-* * *
-
-# Creating .fnt files
-
-The Developer __Kilburn_ mentioned that fonts can be created using this Tool: [https://www.angelcode.com/products/bmfont](https://www.angelcode.com/products/bmfont).
-
-The best results can be made by converting Bitmap fonts, since they allow for smaller fontsizes.
-
-![](../images/BM_font-settings.png){: style="float:right"}
-
-**Font Settings:**
-
-*   **Font** - choose a font thats very readable in small sizes (~8-10px height)
-*   **Charset** - Unicode
-*   **Size** - the general size of the characters in pixels. normal values are between 10 and 16
-*   **Height** - can be used to squish/strech the
-*   **Match char height** - the charactersize will be choosen based on the character, and not the size defined in **Size**
-*   **Bold / Italic** - What font styling should be used
-*   **Output invalid char glyph** - Characters that dont have a sprite will be put on the spritesheet, too. This can create holes in the spritesheet
-*   **Do not include kerning pairs** - ?
-
-*   **Rasterization** - used to smooth the font sprites. Not recommended for Isaac since we want pixel-perfect fonts!
-
-*   **Outline thickness** - Define if an outline should be drawn around the character. In Isaac, this is always ~1px
-
-![](../images/BM_export-settings.png){: style="float:right"}
-
-**Export Options:**
-
-*   **Padding** - Padding around each character, in pixels
-*   **Spacing** - Space between characters, in pixels
-*   **Equalize the cell heights** - will align all characters in a way, so they take up the least space vertically. off = they group in more uniform rows
-
-*   **Width / Height** - Width and Height of each character spritesheet. If spritesheet isnt big enough, multiple files will be created
-*   **Bit depth** - how many Bits should be used per color. ALWAYS choose 32 bit!
-*   **Pack chars in multiple Channels** - Dont use this. We need all channels for out font because of transparencies!
-
-*   **File format** - Choose Binary to create ".fnt" files
-*   **Textures** - always set it to "png"
-*   **Compression** - (only one option available)
+*(Esample source: _Kilburn)*
